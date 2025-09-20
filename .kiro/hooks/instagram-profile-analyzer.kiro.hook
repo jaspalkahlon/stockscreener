@@ -1,0 +1,20 @@
+{
+  "enabled": true,
+  "name": "Instagram Profile Analyzer",
+  "description": "Monitors for files containing Instagram links and triggers analysis of profiles with scoring and improvement recommendations",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.txt",
+      "*.csv",
+      "*.json",
+      "*.md",
+      "Instagram profiles_Sept 20.csv"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A file has been saved that may contain Instagram links. Please:\n\n1. Extract all Instagram profile links from the file\n2. For each Instagram profile, analyze it and provide:\n   - An assessment score out of 10\n   - 5 specific areas for improvement\n3. Create an Excel spreadsheet with separate sheets for each profile containing:\n   - Profile URL\n   - Assessment score\n   - Detailed analysis\n   - 5 improvement recommendations\n4. Save the Excel file with a timestamp in the filename\n\nFocus on content quality, engagement, visual consistency, bio optimization, and posting strategy in your analysis."
+  }
+}

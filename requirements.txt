@@ -1,0 +1,13 @@
+streamlit
+yfinance
+ta
+plotly
+pandas
+python-dotenv
+requests
+openpyxl
+scikit-learn
+numpy
+scipy
+textblob
+vaderSentiment
