@@ -49,7 +49,8 @@ if 'selected_stocks' not in st.session_state:
 st.sidebar.title("🚀 Enhanced Stock Screener")
 st.sidebar.markdown("---")
 
-menu = [
+# Progress indicator
+progress_steps = [
     "📊 Input & Data",
     "🔍 Fundamental Analysis", 
     "🎯 Stock Selection",
@@ -60,7 +61,13 @@ menu = [
     "📋 Summary Report"
 ]
 
-choice = st.sidebar.radio("Navigation:", menu, index=st.session_state['step'] - 1)
+# Show current step
+current_step = st.session_state.get('step', 1)
+st.sidebar.markdown(f"**Current Step: {current_step}/8**")
+st.sidebar.progress(current_step / 8)
+st.sidebar.markdown("---")
+
+choice = st.sidebar.radio("Navigation:", progress_steps, index=current_step - 1, key="nav_radio")
 
 # Helper functions
 def set_step(n):
@@ -167,15 +174,133 @@ def create_enhanced_chart(symbol, analysis_type="comprehensive"):
         st.error(f"Error creating chart for {symbol}: {e}")
 
 # Page logic
-if choice == menu[0]:  # Input & Data
+if choice == progress_steps[0]:  # Input & Data
     set_step(1)
-    data_input.run()
+    st.header("📊 Stock Input & Data Collection")
+    
+    # Stock input with Enter key functionality
+    st.subheader("Enter Stock Symbols")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Initialize symbols in session state if not exists
+        if 'input_symbols' not in st.session_state:
+            st.session_state.input_symbols = "RELIANCE\nTCS\nINFY\nHDFCBANK\nICICIBANK"
+        
+        symbols_text = st.text_area(
+            "Stock symbols (NSE format, one per line):",
+            value=st.session_state.input_symbols,
+            height=150,
+            key="symbols_textarea"
+        )
+        
+        # Single stock input with Enter key support
+        col_input, col_add = st.columns([3, 1])
+        with col_input:
+            single_stock = st.text_input(
+                "Add individual stock:",
+                placeholder="e.g., RELIANCE",
+                key="single_stock"
+            )
+        
+        with col_add:
+            st.write("")  # Spacing
+            add_clicked = st.button("➕ Add")
+        
+        # Handle adding single stock
+        if (add_clicked or single_stock) and single_stock.strip():
+            current_symbols = symbols_text.split('\n') if symbols_text else []
+            new_symbol = single_stock.upper().strip()
+            
+            if new_symbol not in [s.strip().upper() for s in current_symbols]:
+                current_symbols.append(new_symbol)
+                st.session_state.input_symbols = '\n'.join(current_symbols)
+                st.session_state.single_stock = ""  # Clear input
+                st.rerun()
+            else:
+                st.warning(f"{new_symbol} already in the list!")
+        
+        # Process symbols button
+        if st.button("🚀 Process Stocks", type="primary"):
+            symbols = [s.strip().upper() for s in symbols_text.split('\n') if s.strip()]
+            if symbols:
+                st.session_state.symbols = symbols
+                st.session_state.input_symbols = symbols_text
+                st.success(f"✅ {len(symbols)} stocks ready for analysis")
+                set_step(2)
+                st.rerun()
+            else:
+                st.error("Please enter at least one stock symbol")
+    
+    with col2:
+        st.info("""
+        **Instructions:**
+        1. Enter NSE stock symbols
+        2. One symbol per line
+        3. Use format: RELIANCE, TCS, etc.
+        4. Click 'Process Stocks' to continue
+        
+        **Popular Stocks:**
+        - RELIANCE (Reliance Industries)
+        - TCS (Tata Consultancy)
+        - INFY (Infosys)
+        - HDFCBANK (HDFC Bank)
+        - ICICIBANK (ICICI Bank)
+        """)
+        
+        # Show current symbols
+        if st.session_state.get('symbols'):
+            st.success(f"**Ready:** {len(st.session_state.symbols)} stocks")
+            for symbol in st.session_state.symbols:
+                st.write(f"• {symbol}")
 
-elif choice == menu[1]:  # Fundamental Analysis
+elif choice == progress_steps[1]:  # Fundamental Analysis
     set_step(2)
-    fundamental.run()
+    st.header("🔍 Fundamental Analysis")
+    
+    symbols = st.session_state.get('symbols', [])
+    if not symbols:
+        st.warning("Please add stocks first in Step 1")
+        if st.button("← Go to Step 1"):
+            set_step(1)
+            st.rerun()
+    else:
+        st.write(f"Analyzing {len(symbols)} stocks: {', '.join(symbols)}")
+        
+        if st.button("📊 Run Fundamental Analysis"):
+            progress_bar = st.progress(0)
+            results = []
+            
+            for i, symbol in enumerate(symbols):
+                progress_bar.progress((i + 1) / len(symbols))
+                
+                try:
+                    import yfinance as yf
+                    ticker = yf.Ticker(symbol + ".NS")
+                    info = ticker.info
+                    
+                    result = {
+                        'symbol': symbol,
+                        'name': info.get('shortName', symbol),
+                        'market_cap': info.get('marketCap', 0),
+                        'pe_ratio': info.get('forwardPE', 0),
+                        'price': info.get('currentPrice', 0),
+                        'sector': info.get('sector', 'Unknown')
+                    }
+                    results.append(result)
+                    
+                except Exception as e:
+                    st.error(f"Error analyzing {symbol}: {e}")
+            
+            st.session_state.fundamental_results = results
+            
+            if results:
+                df = pd.DataFrame(results)
+                st.dataframe(df, use_container_width=True)
+                st.success("✅ Fundamental analysis complete!")
 
-elif choice == menu[2]:  # Stock Selection
+elif choice == progress_steps[2]:  # Stock Selection
     set_step(3)
     st.header("🎯 Stock Selection for Advanced Analysis")
     
@@ -212,7 +337,7 @@ elif choice == menu[2]:  # Stock Selection
     else:
         st.warning("No fundamental results yet. Please run the fundamental analysis first.")
 
-elif choice == menu[3]:  # Technical Analysis
+elif choice == progress_steps[3]:  # Technical Analysis
     set_step(4)
     st.header("📈 Enhanced Technical Analysis")
     
@@ -258,7 +383,7 @@ elif choice == menu[3]:  # Technical Analysis
                         st.write(f"Strength: {trend['strength']:.2f}")
                         st.write(f"ADX: {trend['adx']:.2f}")
 
-elif choice == menu[4]:  # ML Predictions
+elif choice == progress_steps[4]:  # ML Predictions
     set_step(5)
     st.header("🤖 Machine Learning Predictions")
     
@@ -306,7 +431,7 @@ elif choice == menu[4]:  # ML Predictions
                         for model_name, pred_data in prediction['individual_models'].items():
                             st.write(f"**{model_name.title()}**: ₹{pred_data['predicted_price']:.2f} ({pred_data['predicted_return']*100:+.2f}%)")
 
-elif choice == menu[5]:  # Sentiment Analysis
+elif choice == progress_steps[5]:  # Sentiment Analysis
     set_step(6)
     st.header("💭 Enhanced Sentiment Analysis")
     
@@ -363,14 +488,16 @@ elif choice == menu[5]:  # Sentiment Analysis
                         st.plotly_chart(fig, use_container_width=True)
                 
                 # Recent news
-                if sentiment_result['recent_news']:
+                if sentiment_result.get('recent_news'):
                     st.subheader("📰 Recent News")
                     for news in sentiment_result['recent_news']:
                         with st.expander(f"{news['source']}: {news['title'][:50]}..."):
                             st.write(news['description'])
                             st.caption(f"Published: {news['publishedAt']}")
+                else:
+                    st.info("No recent news found for this stock.")
 
-elif choice == menu[6]:  # Advanced Analytics
+elif choice == progress_steps[6]:  # Advanced Analytics
     set_step(7)
     st.header("🔬 Advanced Analytics Dashboard")
     
@@ -430,7 +557,7 @@ elif choice == menu[6]:  # Advanced Analytics
                             else:
                                 st.info(f"No {pattern_name.replace('_', ' ')} pattern detected")
 
-elif choice == menu[7]:  # Summary Report
+elif choice == progress_steps[7]:  # Summary Report
     set_step(8)
     st.header("📋 Comprehensive Analysis Report")
     
