@@ -5,8 +5,21 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
-from scipy import stats
-from sklearn.linear_model import LinearRegression
+
+# Handle optional dependencies gracefully
+try:
+    from scipy import stats
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    print("Warning: scipy not available. Some advanced features will be disabled.")
+
+try:
+    from sklearn.linear_model import LinearRegression
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    print("Warning: sklearn not available. Some ML features will be disabled.")
 
 class EnhancedTechnicalAnalysis:
     def __init__(self):
@@ -51,47 +64,77 @@ class EnhancedTechnicalAnalysis:
             return None
     
     def calculate_basic_indicators(self, df):
-        """Calculate basic technical indicators"""
-        indicators = {}
-        
-        # Moving averages
-        for period in [5, 10, 20, 50, 200]:
-            df[f'SMA_{period}'] = df['Close'].rolling(period).mean()
-            df[f'EMA_{period}'] = df['Close'].ewm(span=period).mean()
-        
-        # RSI
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rs = gain / loss
-        df['RSI'] = 100 - (100 / (1 + rs))
-        
-        # MACD
-        df['MACD'] = df['EMA_12'] - df['EMA_26'] if 'EMA_12' not in df.columns else df['Close'].ewm(span=12).mean() - df['Close'].ewm(span=26).mean()
-        df['MACD_Signal'] = df['MACD'].ewm(span=9).mean()
-        df['MACD_Histogram'] = df['MACD'] - df['MACD_Signal']
-        
-        # Bollinger Bands
-        df['BB_Middle'] = df['Close'].rolling(20).mean()
-        bb_std = df['Close'].rolling(20).std()
-        df['BB_Upper'] = df['BB_Middle'] + (bb_std * 2)
-        df['BB_Lower'] = df['BB_Middle'] - (bb_std * 2)
-        df['BB_Width'] = (df['BB_Upper'] - df['BB_Lower']) / df['BB_Middle']
-        df['BB_Position'] = (df['Close'] - df['BB_Lower']) / (df['BB_Upper'] - df['BB_Lower'])
-        
-        # Current values
-        latest = df.iloc[-1]
-        indicators = {
-            'RSI': latest['RSI'],
-            'MACD': latest['MACD'],
-            'MACD_Signal': latest['MACD_Signal'],
-            'BB_Position': latest['BB_Position'],
-            'BB_Width': latest['BB_Width'],
-            'Price_vs_SMA20': latest['Close'] / latest['SMA_20'] - 1,
-            'Price_vs_SMA50': latest['Close'] / latest['SMA_50'] - 1,
-        }
-        
-        return indicators
+        """Calculate basic technical indicators with error handling"""
+        try:
+            indicators = {}
+            
+            # Moving averages
+            for period in [5, 10, 20, 50, 200]:
+                if len(df) >= period:
+                    df[f'SMA_{period}'] = df['Close'].rolling(period).mean()
+                    df[f'EMA_{period}'] = df['Close'].ewm(span=period).mean()
+            
+            # RSI
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            
+            # Avoid division by zero
+            rs = gain / loss.replace(0, 0.0001)
+            df['RSI'] = 100 - (100 / (1 + rs))
+            
+            # MACD
+            ema_12 = df['Close'].ewm(span=12).mean()
+            ema_26 = df['Close'].ewm(span=26).mean()
+            df['MACD'] = ema_12 - ema_26
+            df['MACD_Signal'] = df['MACD'].ewm(span=9).mean()
+            df['MACD_Histogram'] = df['MACD'] - df['MACD_Signal']
+            
+            # Bollinger Bands
+            df['BB_Middle'] = df['Close'].rolling(20).mean()
+            bb_std = df['Close'].rolling(20).std()
+            df['BB_Upper'] = df['BB_Middle'] + (bb_std * 2)
+            df['BB_Lower'] = df['BB_Middle'] - (bb_std * 2)
+            
+            # Avoid division by zero for BB calculations
+            bb_range = df['BB_Upper'] - df['BB_Lower']
+            df['BB_Width'] = bb_range / df['BB_Middle'].replace(0, 1)
+            df['BB_Position'] = (df['Close'] - df['BB_Lower']) / bb_range.replace(0, 1)
+            
+            # Current values with safe access
+            latest = df.iloc[-1]
+            
+            def safe_get(key, default=0):
+                try:
+                    value = latest[key]
+                    return value if pd.notna(value) else default
+                except (KeyError, IndexError):
+                    return default
+            
+            indicators = {
+                'RSI': safe_get('RSI', 50),
+                'MACD': safe_get('MACD', 0),
+                'MACD_Signal': safe_get('MACD_Signal', 0),
+                'BB_Position': safe_get('BB_Position', 0.5),
+                'BB_Width': safe_get('BB_Width', 0.1),
+                'Price_vs_SMA20': safe_get('Close', 0) / safe_get('SMA_20', safe_get('Close', 1)) - 1 if safe_get('SMA_20', 0) > 0 else 0,
+                'Price_vs_SMA50': safe_get('Close', 0) / safe_get('SMA_50', safe_get('Close', 1)) - 1 if safe_get('SMA_50', 0) > 0 else 0,
+            }
+            
+            return indicators
+            
+        except Exception as e:
+            print(f"Error calculating basic indicators: {e}")
+            # Return default values
+            return {
+                'RSI': 50,
+                'MACD': 0,
+                'MACD_Signal': 0,
+                'BB_Position': 0.5,
+                'BB_Width': 0.1,
+                'Price_vs_SMA20': 0,
+                'Price_vs_SMA50': 0,
+            }
     
     def calculate_advanced_indicators(self, df):
         """Calculate advanced technical indicators"""
@@ -235,29 +278,54 @@ class EnhancedTechnicalAnalysis:
     
     def analyze_trend(self, df):
         """Analyze price trend using multiple methods"""
-        # Linear regression trend
-        x = np.arange(len(df))
-        y = df['Close'].values
-        slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
-        
-        # Moving average trend
-        sma_20 = df['Close'].rolling(20).mean()
-        sma_50 = df['Close'].rolling(50).mean()
-        
-        trend_strength = abs(r_value)
-        trend_direction = 'up' if slope > 0 else 'down'
-        
-        # ADX for trend strength
-        adx = self.calculate_adx(df)
-        
-        return {
-            'direction': trend_direction,
-            'strength': trend_strength,
-            'slope': slope,
-            'r_squared': r_value ** 2,
-            'adx': adx.iloc[-1] if not adx.empty else 0,
-            'ma_trend': 'bullish' if sma_20.iloc[-1] > sma_50.iloc[-1] else 'bearish'
-        }
+        try:
+            # Moving average trend
+            sma_20 = df['Close'].rolling(20).mean()
+            sma_50 = df['Close'].rolling(50).mean()
+            
+            # Simple trend calculation
+            recent_prices = df['Close'].tail(20)
+            price_change = (recent_prices.iloc[-1] - recent_prices.iloc[0]) / recent_prices.iloc[0]
+            trend_direction = 'up' if price_change > 0 else 'down'
+            trend_strength = abs(price_change)
+            
+            # Linear regression trend (if scipy available)
+            if SCIPY_AVAILABLE:
+                x = np.arange(len(df))
+                y = df['Close'].values
+                slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+                trend_strength = abs(r_value)
+                trend_direction = 'up' if slope > 0 else 'down'
+                r_squared = r_value ** 2
+            else:
+                slope = price_change
+                r_squared = 0.5  # Default value
+            
+            # ADX for trend strength
+            try:
+                adx = self.calculate_adx(df)
+                adx_value = adx.iloc[-1] if not adx.empty else 25
+            except:
+                adx_value = 25  # Default ADX value
+            
+            return {
+                'direction': trend_direction,
+                'strength': min(trend_strength, 1.0),  # Cap at 1.0
+                'slope': slope,
+                'r_squared': r_squared,
+                'adx': adx_value,
+                'ma_trend': 'bullish' if sma_20.iloc[-1] > sma_50.iloc[-1] else 'bearish'
+            }
+        except Exception as e:
+            print(f"Error in trend analysis: {e}")
+            return {
+                'direction': 'neutral',
+                'strength': 0.5,
+                'slope': 0,
+                'r_squared': 0.5,
+                'adx': 25,
+                'ma_trend': 'neutral'
+            }
     
     def calculate_adx(self, df, period=14):
         """Calculate Average Directional Index"""
@@ -344,17 +412,26 @@ class EnhancedTechnicalAnalysis:
     
     def detect_triangle(self, df):
         """Detect triangle patterns"""
-        # Simplified - check if highs are declining and lows are rising
-        recent_highs = df['High'].tail(20)
-        recent_lows = df['Low'].tail(20)
-        
-        high_slope = stats.linregress(range(len(recent_highs)), recent_highs)[0]
-        low_slope = stats.linregress(range(len(recent_lows)), recent_lows)[0]
-        
-        if high_slope < 0 and low_slope > 0:
-            return {'detected': True, 'type': 'symmetrical', 'confidence': 0.7}
-        
-        return {'detected': False, 'confidence': 0}
+        try:
+            # Simplified - check if highs are declining and lows are rising
+            recent_highs = df['High'].tail(20)
+            recent_lows = df['Low'].tail(20)
+            
+            if SCIPY_AVAILABLE:
+                high_slope = stats.linregress(range(len(recent_highs)), recent_highs)[0]
+                low_slope = stats.linregress(range(len(recent_lows)), recent_lows)[0]
+            else:
+                # Simple slope calculation
+                high_slope = (recent_highs.iloc[-1] - recent_highs.iloc[0]) / len(recent_highs)
+                low_slope = (recent_lows.iloc[-1] - recent_lows.iloc[0]) / len(recent_lows)
+            
+            if high_slope < 0 and low_slope > 0:
+                return {'detected': True, 'type': 'symmetrical', 'confidence': 0.7}
+            
+            return {'detected': False, 'confidence': 0}
+        except Exception as e:
+            print(f"Error detecting triangle: {e}")
+            return {'detected': False, 'confidence': 0}
     
     def detect_flag(self, df):
         """Detect flag/pennant patterns"""

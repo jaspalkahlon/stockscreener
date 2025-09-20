@@ -6,11 +6,19 @@ import plotly.graph_objects as go
 from datetime import datetime
 import numpy as np
 
-# Import our modules
-from advanced_analytics import StockAnalytics
-from enhanced_sentiment import EnhancedSentimentAnalyzer
-from ml_predictions import MLPredictor
-from enhanced_technical import EnhancedTechnicalAnalysis
+# Import our modules with fallbacks
+try:
+    from advanced_analytics import StockAnalytics
+    from enhanced_sentiment import EnhancedSentimentAnalyzer
+    from ml_predictions import MLPredictor
+    from enhanced_technical import EnhancedTechnicalAnalysis
+    ADVANCED_FEATURES = True
+except ImportError as e:
+    print(f"Advanced features not available: {e}")
+    ADVANCED_FEATURES = False
+
+# Always import the simple fallback
+from simple_technical import SimpleTechnicalAnalysis
 
 # Page config
 st.set_page_config(
@@ -19,15 +27,25 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize analytics
+# Initialize analytics with fallbacks
 @st.cache_resource
 def get_analytics():
-    return {
-        'stock_analytics': StockAnalytics(),
-        'sentiment_analyzer': EnhancedSentimentAnalyzer(),
-        'ml_predictor': MLPredictor(),
-        'technical_analyzer': EnhancedTechnicalAnalysis()
+    analytics_dict = {
+        'technical_analyzer': SimpleTechnicalAnalysis()  # Always available
     }
+    
+    if ADVANCED_FEATURES:
+        try:
+            analytics_dict.update({
+                'stock_analytics': StockAnalytics(),
+                'sentiment_analyzer': EnhancedSentimentAnalyzer(),
+                'ml_predictor': MLPredictor(),
+                'enhanced_technical_analyzer': EnhancedTechnicalAnalysis()
+            })
+        except Exception as e:
+            print(f"Error initializing advanced analytics: {e}")
+    
+    return analytics_dict
 
 analytics = get_analytics()
 
