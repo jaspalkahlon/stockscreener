@@ -4,7 +4,7 @@
   "description": "Monitors for files containing Instagram links and triggers analysis of profiles with scoring and improvement recommendations",
   "version": "1",
   "when": {
-    "type": "fileEdited",
+    "type": "userTriggered",
     "patterns": [
       "*.txt",
       "*.csv",
