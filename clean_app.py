@@ -67,39 +67,60 @@ st.sidebar.header("📊 Stock Management")
 with st.sidebar:
     st.subheader("Add Stocks")
     
-    # Text input for single stock with Enter key detection
-    stock_input = st.text_input(
-        "Enter stock symbol:",
-        placeholder="e.g., RELIANCE",
-        key="stock_input",
-        help="Press Enter to add stock"
+    # Callback function for adding stocks
+    def add_stock_callback():
+        stock_input = st.session_state.get('new_stock_input', '').strip().upper()
+        if stock_input and stock_input not in st.session_state.stocks:
+            st.session_state.stocks.append(stock_input)
+            st.session_state.new_stock_input = ""  # Clear input
+            st.success(f"✅ Added {stock_input}")
+        elif stock_input in st.session_state.stocks:
+            st.warning(f"⚠️ {stock_input} already added!")
+    
+    # Method 1: Form with Enter key support (Most Reliable)
+    with st.form("add_stock_form", clear_on_submit=True):
+        form_stock_input = st.text_input(
+            "Enter stock symbol:",
+            placeholder="e.g., RELIANCE, TCS, INFY",
+            help="✅ Type symbol and press Enter or click Add button"
+        )
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            form_submitted = st.form_submit_button("➕ Add Stock", use_container_width=True)
+        with col2:
+            if st.form_submit_button("🗑️ Clear All", use_container_width=True):
+                st.session_state.stocks = []
+                st.session_state.current_stock = ""
+        
+        # Handle form submission (works with Enter key!)
+        if form_submitted and form_stock_input.strip():
+            stock_symbol = form_stock_input.upper().strip()
+            
+            if stock_symbol not in st.session_state.stocks:
+                st.session_state.stocks.append(stock_symbol)
+                st.success(f"✅ Added {stock_symbol}")
+                st.rerun()
+            else:
+                st.warning(f"⚠️ {stock_symbol} already in list!")
+    
+    # Method 2: Text input with callback (Alternative)
+    st.write("**Alternative method:**")
+    st.text_input(
+        "Quick add:",
+        placeholder="Type symbol here",
+        key="new_stock_input",
+        on_change=add_stock_callback,
+        help="Type and press Enter",
+        label_visibility="collapsed"
     )
     
-    # Add stock button and Enter key handling
-    col1, col2 = st.columns(2)
-    with col1:
-        add_clicked = st.button("➕ Add", use_container_width=True)
-    with col2:
-        clear_clicked = st.button("🗑️ Clear", use_container_width=True)
-    
-    # Handle stock addition (both button click and Enter key)
-    if stock_input and (add_clicked or stock_input != st.session_state.get('last_input', '')):
-        stock_symbol = stock_input.upper().strip()
-        if stock_symbol and stock_symbol not in st.session_state.stocks:
-            st.session_state.stocks.append(stock_symbol)
-            st.session_state.stock_input = ""  # Clear input
-            st.success(f"✅ Added {stock_symbol}")
-            st.rerun()
-        elif stock_symbol in st.session_state.stocks:
-            st.warning(f"⚠️ {stock_symbol} already added!")
-    
-    st.session_state.last_input = stock_input
-    
-    # Clear all stocks
-    if clear_clicked:
-        st.session_state.stocks = []
-        st.session_state.current_stock = ""
-        st.rerun()
+    # Debug info (remove in production)
+    if st.checkbox("Show debug info", key="debug_stocks"):
+        st.write("**Debug Info:**")
+        st.write(f"Current stocks: {st.session_state.stocks}")
+        st.write(f"Form input: {st.session_state.get('new_stock_input', 'None')}")
+        st.write(f"Session state keys: {list(st.session_state.keys())}")
     
     # Quick add popular stocks
     st.subheader("Quick Add")
@@ -115,7 +136,9 @@ with st.sidebar:
 
 # Display current stocks
 if st.session_state.stocks:
-    st.sidebar.subheader("📋 Current Stocks")
+    st.sidebar.subheader(f"📋 Current Stocks ({len(st.session_state.stocks)})")
+    
+    # Show stocks with remove buttons
     for i, stock in enumerate(st.session_state.stocks):
         col1, col2 = st.sidebar.columns([3, 1])
         with col1:
