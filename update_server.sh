@@ -61,7 +61,7 @@ fi
 # Step 2: Backup current version
 log "Step 2: Creating backup..."
 BACKUP_NAME="stockscreener-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
-tar -czf "../$BACKUP_NAME" . --exclude='.git' --exclude='__pycache__' --exclude='*.pyc'
+tar --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' -czf "../$BACKUP_NAME" .
 success "Backup created: ../$BACKUP_NAME"
 
 # Step 3: Pull latest changes
