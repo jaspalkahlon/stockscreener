@@ -481,3 +481,479 @@ class EnhancedTechnicalAnalysis:
             'volatility_regime': 'high' if vol_percentile > 0.8 else 'low' if vol_percentile < 0.2 else 'normal',
             'vol_20_vs_50': vol_20.iloc[-1] / vol_50.iloc[-1] - 1
         }
+    
+    def create_projection_chart(self, symbol, projection_days=30):
+        """Create technical analysis chart with price projection"""
+        try:
+            # Get historical data
+            ticker = yf.Ticker(symbol + ".NS")
+            df = ticker.history(period="6mo")
+            
+            if df.empty:
+                return None
+            
+            # Calculate technical indicators
+            df = self.add_technical_indicators(df)
+            
+            # Generate price projections
+            projections = self.generate_price_projections(df, projection_days)
+            
+            # Create the chart
+            fig = self.create_interactive_chart(df, projections, symbol)
+            
+            return fig, projections
+            
+        except Exception as e:
+            print(f"Error creating projection chart for {symbol}: {e}")
+            return None, None
+    
+    def add_technical_indicators(self, df):
+        """Add all technical indicators to dataframe"""
+        # Moving averages
+        for period in [5, 10, 20, 50]:
+            if len(df) >= period:
+                df[f'SMA_{period}'] = df['Close'].rolling(period).mean()
+                df[f'EMA_{period}'] = df['Close'].ewm(span=period).mean()
+        
+        # RSI
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss.replace(0, 0.0001)
+        df['RSI'] = 100 - (100 / (1 + rs))
+        
+        # MACD
+        ema_12 = df['Close'].ewm(span=12).mean()
+        ema_26 = df['Close'].ewm(span=26).mean()
+        df['MACD'] = ema_12 - ema_26
+        df['MACD_Signal'] = df['MACD'].ewm(span=9).mean()
+        
+        # Bollinger Bands
+        df['BB_Middle'] = df['Close'].rolling(20).mean()
+        bb_std = df['Close'].rolling(20).std()
+        df['BB_Upper'] = df['BB_Middle'] + (bb_std * 2)
+        df['BB_Lower'] = df['BB_Middle'] - (bb_std * 2)
+        
+        # Support and Resistance
+        support_resistance = self.find_support_resistance(df)
+        df['Support'] = support_resistance['support_levels'][0] if support_resistance['support_levels'] else df['Close'].min()
+        df['Resistance'] = support_resistance['resistance_levels'][0] if support_resistance['resistance_levels'] else df['Close'].max()
+        
+        return df
+    
+    def generate_price_projections(self, df, projection_days):
+        """Generate multiple price projections using different methods"""
+        current_price = df['Close'].iloc[-1]
+        last_date = df.index[-1]
+        
+        # Create future dates
+        future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), 
+                                   periods=projection_days, freq='D')
+        
+        projections = {}
+        
+        # 1. Trend-based projection
+        projections['trend'] = self.trend_projection(df, future_dates, current_price)
+        
+        # 2. Moving average projection
+        projections['ma_based'] = self.ma_projection(df, future_dates, current_price)
+        
+        # 3. Support/Resistance projection
+        projections['sr_based'] = self.sr_projection(df, future_dates, current_price)
+        
+        # 4. Volatility-based projection (Monte Carlo style)
+        projections['volatility'] = self.volatility_projection(df, future_dates, current_price)
+        
+        # 5. Ensemble projection (average of all methods)
+        projections['ensemble'] = self.ensemble_projection(projections, future_dates)
+        
+        return projections
+    
+    def trend_projection(self, df, future_dates, current_price):
+        """Project price based on recent trend"""
+        try:
+            # Use last 20 days for trend calculation
+            recent_prices = df['Close'].tail(20)
+            
+            if SKLEARN_AVAILABLE:
+                # Linear regression trend
+                X = np.arange(len(recent_prices)).reshape(-1, 1)
+                y = recent_prices.values
+                
+                model = LinearRegression()
+                model.fit(X, y)
+                
+                # Project future
+                future_X = np.arange(len(recent_prices), 
+                                   len(recent_prices) + len(future_dates)).reshape(-1, 1)
+                future_prices = model.predict(future_X)
+                
+                # Add some bounds based on historical volatility
+                returns = df['Close'].pct_change().dropna()
+                daily_vol = returns.std()
+                
+                upper_bound = future_prices * (1 + daily_vol * 2)
+                lower_bound = future_prices * (1 - daily_vol * 2)
+                
+            else:
+                # Simple trend calculation
+                price_change = (recent_prices.iloc[-1] - recent_prices.iloc[0]) / len(recent_prices)
+                future_prices = [current_price + price_change * (i + 1) for i in range(len(future_dates))]
+                
+                # Simple bounds
+                daily_vol = df['Close'].pct_change().std()
+                upper_bound = [p * (1 + daily_vol * 2) for p in future_prices]
+                lower_bound = [p * (1 - daily_vol * 2) for p in future_prices]
+            
+            return {
+                'dates': future_dates,
+                'prices': future_prices,
+                'upper_bound': upper_bound,
+                'lower_bound': lower_bound,
+                'method': 'Trend Analysis'
+            }
+            
+        except Exception as e:
+            print(f"Error in trend projection: {e}")
+            return self.fallback_projection(future_dates, current_price)
+    
+    def ma_projection(self, df, future_dates, current_price):
+        """Project price based on moving average convergence"""
+        try:
+            sma_20 = df['SMA_20'].iloc[-1] if 'SMA_20' in df.columns else current_price
+            sma_50 = df['SMA_50'].iloc[-1] if 'SMA_50' in df.columns else current_price
+            
+            # Project based on MA relationship
+            ma_bias = (current_price - sma_20) / sma_20 if sma_20 > 0 else 0
+            
+            # Gradual convergence to longer MA
+            future_prices = []
+            for i, date in enumerate(future_dates):
+                # Decay the bias over time
+                decay_factor = np.exp(-i / 10)  # Decay over ~10 days
+                projected_bias = ma_bias * decay_factor
+                
+                # Project MA forward (simple trend)
+                ma_trend = (sma_20 - sma_50) / 20 if sma_50 > 0 else 0
+                future_ma = sma_20 + ma_trend * (i + 1)
+                
+                future_price = future_ma * (1 + projected_bias)
+                future_prices.append(future_price)
+            
+            # Calculate bounds
+            daily_vol = df['Close'].pct_change().std()
+            upper_bound = [p * (1 + daily_vol * 1.5) for p in future_prices]
+            lower_bound = [p * (1 - daily_vol * 1.5) for p in future_prices]
+            
+            return {
+                'dates': future_dates,
+                'prices': future_prices,
+                'upper_bound': upper_bound,
+                'lower_bound': lower_bound,
+                'method': 'Moving Average'
+            }
+            
+        except Exception as e:
+            print(f"Error in MA projection: {e}")
+            return self.fallback_projection(future_dates, current_price)
+    
+    def sr_projection(self, df, future_dates, current_price):
+        """Project price based on support/resistance levels"""
+        try:
+            sr_levels = self.find_support_resistance(df)
+            
+            # Get nearest support and resistance
+            resistance = sr_levels['resistance_levels'][0] if sr_levels['resistance_levels'] else current_price * 1.05
+            support = sr_levels['support_levels'][0] if sr_levels['support_levels'] else current_price * 0.95
+            
+            # Project price movement between S/R levels
+            future_prices = []
+            
+            # Determine initial direction based on current position
+            mid_point = (support + resistance) / 2
+            if current_price > mid_point:
+                # Trending toward resistance
+                target = resistance
+                direction = 1
+            else:
+                # Trending toward support
+                target = support
+                direction = -1
+            
+            for i, date in enumerate(future_dates):
+                # Oscillate between support and resistance
+                progress = (i + 1) / len(future_dates)
+                
+                if direction == 1:  # Moving toward resistance
+                    price = current_price + (target - current_price) * progress * 0.8
+                    # Bounce back if getting close to resistance
+                    if price > resistance * 0.98:
+                        direction = -1
+                        target = support
+                else:  # Moving toward support
+                    price = current_price + (target - current_price) * progress * 0.8
+                    # Bounce back if getting close to support
+                    if price < support * 1.02:
+                        direction = 1
+                        target = resistance
+                
+                future_prices.append(max(support * 0.95, min(resistance * 1.05, price)))
+            
+            # Bounds based on S/R levels
+            upper_bound = [min(resistance * 1.1, p * 1.1) for p in future_prices]
+            lower_bound = [max(support * 0.9, p * 0.9) for p in future_prices]
+            
+            return {
+                'dates': future_dates,
+                'prices': future_prices,
+                'upper_bound': upper_bound,
+                'lower_bound': lower_bound,
+                'method': 'Support/Resistance'
+            }
+            
+        except Exception as e:
+            print(f"Error in S/R projection: {e}")
+            return self.fallback_projection(future_dates, current_price)
+    
+    def volatility_projection(self, df, future_dates, current_price):
+        """Project price using volatility-based random walk"""
+        try:
+            # Calculate historical volatility
+            returns = df['Close'].pct_change().dropna()
+            daily_vol = returns.std()
+            mean_return = returns.mean()
+            
+            # Generate random walk with drift
+            np.random.seed(42)  # For reproducible results
+            
+            future_prices = [current_price]
+            for i in range(len(future_dates)):
+                # Random return with mean reversion
+                random_return = np.random.normal(mean_return, daily_vol)
+                next_price = future_prices[-1] * (1 + random_return)
+                future_prices.append(next_price)
+            
+            future_prices = future_prices[1:]  # Remove initial price
+            
+            # Calculate confidence bands
+            upper_bound = [p * (1 + daily_vol * 2) for p in future_prices]
+            lower_bound = [p * (1 - daily_vol * 2) for p in future_prices]
+            
+            return {
+                'dates': future_dates,
+                'prices': future_prices,
+                'upper_bound': upper_bound,
+                'lower_bound': lower_bound,
+                'method': 'Volatility Model'
+            }
+            
+        except Exception as e:
+            print(f"Error in volatility projection: {e}")
+            return self.fallback_projection(future_dates, current_price)
+    
+    def ensemble_projection(self, projections, future_dates):
+        """Combine all projection methods into ensemble"""
+        try:
+            # Get all price projections (excluding ensemble itself)
+            all_prices = []
+            all_upper = []
+            all_lower = []
+            
+            for method, proj in projections.items():
+                if method != 'ensemble' and 'prices' in proj:
+                    all_prices.append(proj['prices'])
+                    all_upper.append(proj['upper_bound'])
+                    all_lower.append(proj['lower_bound'])
+            
+            if not all_prices:
+                return self.fallback_projection(future_dates, projections.get('trend', {}).get('prices', [100])[0])
+            
+            # Calculate ensemble averages
+            ensemble_prices = np.mean(all_prices, axis=0)
+            ensemble_upper = np.mean(all_upper, axis=0)
+            ensemble_lower = np.mean(all_lower, axis=0)
+            
+            return {
+                'dates': future_dates,
+                'prices': ensemble_prices,
+                'upper_bound': ensemble_upper,
+                'lower_bound': ensemble_lower,
+                'method': 'Ensemble (Average)'
+            }
+            
+        except Exception as e:
+            print(f"Error in ensemble projection: {e}")
+            return self.fallback_projection(future_dates, 100)
+    
+    def fallback_projection(self, future_dates, current_price):
+        """Fallback projection when other methods fail"""
+        # Simple flat projection with small random walk
+        future_prices = [current_price * (1 + 0.001 * i) for i in range(len(future_dates))]
+        upper_bound = [p * 1.1 for p in future_prices]
+        lower_bound = [p * 0.9 for p in future_prices]
+        
+        return {
+            'dates': future_dates,
+            'prices': future_prices,
+            'upper_bound': upper_bound,
+            'lower_bound': lower_bound,
+            'method': 'Fallback'
+        }
+    
+    def create_interactive_chart(self, df, projections, symbol):
+        """Create interactive Plotly chart with projections"""
+        try:
+            # Create subplots
+            fig = make_subplots(
+                rows=4, cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.05,
+                subplot_titles=(
+                    f'{symbol} - Price & Projections',
+                    'Technical Indicators',
+                    'Volume',
+                    'RSI & MACD'
+                ),
+                row_heights=[0.5, 0.2, 0.15, 0.15]
+            )
+            
+            # Historical price data
+            fig.add_trace(
+                go.Candlestick(
+                    x=df.index,
+                    open=df['Open'],
+                    high=df['High'],
+                    low=df['Low'],
+                    close=df['Close'],
+                    name='Price',
+                    showlegend=False
+                ),
+                row=1, col=1
+            )
+            
+            # Moving averages
+            if 'SMA_20' in df.columns:
+                fig.add_trace(
+                    go.Scatter(x=df.index, y=df['SMA_20'], name='SMA 20', 
+                             line=dict(color='orange', width=1)),
+                    row=1, col=1
+                )
+            
+            if 'SMA_50' in df.columns:
+                fig.add_trace(
+                    go.Scatter(x=df.index, y=df['SMA_50'], name='SMA 50', 
+                             line=dict(color='red', width=1)),
+                    row=1, col=1
+                )
+            
+            # Bollinger Bands
+            if all(col in df.columns for col in ['BB_Upper', 'BB_Lower']):
+                fig.add_trace(
+                    go.Scatter(x=df.index, y=df['BB_Upper'], name='BB Upper',
+                             line=dict(color='gray', width=1, dash='dash')),
+                    row=1, col=1
+                )
+                fig.add_trace(
+                    go.Scatter(x=df.index, y=df['BB_Lower'], name='BB Lower',
+                             line=dict(color='gray', width=1, dash='dash')),
+                    row=1, col=1
+                )
+            
+            # Add projections
+            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']  # Use hex colors
+            color_names = ['blue', 'orange', 'green', 'red', 'purple']
+            
+            for i, (method, proj) in enumerate(projections.items()):
+                if 'prices' in proj:
+                    color = colors[i % len(colors)]
+                    color_name = color_names[i % len(color_names)]
+                    
+                    # Main projection line
+                    fig.add_trace(
+                        go.Scatter(
+                            x=proj['dates'],
+                            y=proj['prices'],
+                            name=f"Projection: {proj['method']}",
+                            line=dict(color=color, width=2, dash='dot'),
+                            mode='lines'
+                        ),
+                        row=1, col=1
+                    )
+                    
+                    # Confidence bands - use proper rgba format
+                    if color == '#1f77b4':  # blue
+                        fill_color = 'rgba(31, 119, 180, 0.1)'
+                    elif color == '#ff7f0e':  # orange
+                        fill_color = 'rgba(255, 127, 14, 0.1)'
+                    elif color == '#2ca02c':  # green
+                        fill_color = 'rgba(44, 160, 44, 0.1)'
+                    elif color == '#d62728':  # red
+                        fill_color = 'rgba(214, 39, 40, 0.1)'
+                    else:  # purple
+                        fill_color = 'rgba(148, 103, 189, 0.1)'
+                    
+                    fig.add_trace(
+                        go.Scatter(
+                            x=list(proj['dates']) + list(proj['dates'][::-1]),
+                            y=list(proj['upper_bound']) + list(proj['lower_bound'][::-1]),
+                            fill='toself',
+                            fillcolor=fill_color,
+                            line=dict(color='rgba(255,255,255,0)'),
+                            name=f"{proj['method']} Range",
+                            showlegend=False
+                        ),
+                        row=1, col=1
+                    )
+            
+            # Volume
+            fig.add_trace(
+                go.Bar(x=df.index, y=df['Volume'], name='Volume', 
+                      marker_color='lightblue'),
+                row=3, col=1
+            )
+            
+            # RSI
+            if 'RSI' in df.columns:
+                fig.add_trace(
+                    go.Scatter(x=df.index, y=df['RSI'], name='RSI', 
+                             line=dict(color='purple')),
+                    row=4, col=1
+                )
+                # RSI levels
+                fig.add_hline(y=70, line_dash="dash", line_color="red", row=4, col=1)
+                fig.add_hline(y=30, line_dash="dash", line_color="green", row=4, col=1)
+            
+            # MACD
+            if 'MACD' in df.columns:
+                fig.add_trace(
+                    go.Scatter(x=df.index, y=df['MACD'], name='MACD', 
+                             line=dict(color='blue')),
+                    row=2, col=1
+                )
+                if 'MACD_Signal' in df.columns:
+                    fig.add_trace(
+                        go.Scatter(x=df.index, y=df['MACD_Signal'], name='MACD Signal', 
+                                 line=dict(color='red')),
+                        row=2, col=1
+                    )
+            
+            # Update layout
+            fig.update_layout(
+                title=f"{symbol} - Technical Analysis with Price Projections",
+                xaxis_rangeslider_visible=False,
+                height=800,
+                showlegend=True,
+                legend=dict(x=0, y=1, bgcolor='rgba(255,255,255,0.8)')
+            )
+            
+            # Update y-axis labels
+            fig.update_yaxes(title_text="Price (₹)", row=1, col=1)
+            fig.update_yaxes(title_text="MACD", row=2, col=1)
+            fig.update_yaxes(title_text="Volume", row=3, col=1)
+            fig.update_yaxes(title_text="RSI", row=4, col=1)
+            
+            return fig
+            
+        except Exception as e:
+            print(f"Error creating chart: {e}")
+            return None
