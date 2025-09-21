@@ -11,6 +11,7 @@ from advanced_analytics import StockAnalytics
 from enhanced_sentiment import EnhancedSentimentAnalyzer
 from ml_predictions import MLPredictor
 from enhanced_technical import EnhancedTechnicalAnalysis
+from trading_recommendations import TradingRecommendationEngine
 
 # Import original modules
 import data_input
@@ -30,7 +31,8 @@ def get_analytics_instances():
         'stock_analytics': StockAnalytics(),
         'sentiment_analyzer': EnhancedSentimentAnalyzer(),
         'ml_predictor': MLPredictor(),
-        'technical_analyzer': EnhancedTechnicalAnalysis()
+        'technical_analyzer': EnhancedTechnicalAnalysis(),
+        'recommendation_engine': TradingRecommendationEngine()
     }
 
 analytics = get_analytics_instances()
@@ -353,11 +355,11 @@ elif choice == progress_steps[3]:  # Technical Analysis
         
         with col2:
             projection_days = st.slider(
-                "Projection Days:",
+                "Analysis Period:",
                 min_value=1,
-                max_value=30,
-                value=15,
-                help="Number of days to project into the future"
+                max_value=90,
+                value=30,
+                help="Time horizon for analysis and recommendations (1-90 days)"
             )
         
         with col3:
@@ -576,6 +578,154 @@ elif choice == progress_steps[3]:  # Technical Analysis
                                 st.info(insight)
                         else:
                             st.info("📊 Market conditions appear neutral - monitor for clearer signals")
+                        
+                        # Trading Recommendations Section
+                        st.markdown("### 🎯 Trading Recommendation")
+                        
+                        with st.spinner("Generating comprehensive trading recommendation..."):
+                            recommendation = analytics['recommendation_engine'].generate_recommendation(
+                                selected_stock, projection_days
+                            )
+                            
+                            if recommendation:
+                                # Main recommendation display
+                                col1, col2, col3 = st.columns(3)
+                                
+                                with col1:
+                                    action = recommendation['action']
+                                    confidence = recommendation['confidence']
+                                    
+                                    # Color code the recommendation
+                                    if action in ['STRONG BUY', 'BUY']:
+                                        color = "🟢"
+                                    elif action in ['WEAK BUY', 'HOLD']:
+                                        color = "🟡"
+                                    else:
+                                        color = "🔴"
+                                    
+                                    st.metric(
+                                        label="Recommendation",
+                                        value=f"{color} {action}",
+                                        delta=f"Confidence: {confidence}"
+                                    )
+                                
+                                with col2:
+                                    current_price = recommendation['current_price']
+                                    target_price = recommendation['target_price']
+                                    expected_return = recommendation['expected_return']
+                                    
+                                    st.metric(
+                                        label="Target Price",
+                                        value=f"₹{target_price:.2f}",
+                                        delta=f"{expected_return:+.1f}%"
+                                    )
+                                
+                                with col3:
+                                    stop_loss = recommendation['stop_loss']
+                                    risk_reward = recommendation['risk_reward_ratio']
+                                    
+                                    st.metric(
+                                        label="Stop Loss",
+                                        value=f"₹{stop_loss:.2f}",
+                                        delta=f"R:R = 1:{risk_reward:.1f}" if risk_reward > 0 else "Risk Management"
+                                    )
+                                
+                                # Detailed recommendation breakdown
+                                with st.expander("📊 Recommendation Breakdown", expanded=False):
+                                    st.markdown("#### Component Scores")
+                                    
+                                    scores = recommendation['component_scores']
+                                    score_cols = st.columns(len(scores))
+                                    
+                                    for i, (component, score) in enumerate(scores.items()):
+                                        with score_cols[i]:
+                                            # Color code scores
+                                            if score >= 70:
+                                                score_color = "🟢"
+                                            elif score >= 50:
+                                                score_color = "🟡"
+                                            else:
+                                                score_color = "🔴"
+                                            
+                                            st.metric(
+                                                label=component.replace('_', ' ').title(),
+                                                value=f"{score_color} {score:.0f}/100"
+                                            )
+                                    
+                                    # Overall score
+                                    overall_score = recommendation['overall_score']
+                                    st.markdown(f"**Overall Score: {overall_score:.1f}/100**")
+                                    
+                                    # Progress bar for overall score
+                                    st.progress(overall_score / 100)
+                                
+                                # Reasoning
+                                st.markdown("#### 💭 Analysis Reasoning")
+                                reasoning = recommendation['reasoning']
+                                for i, reason in enumerate(reasoning, 1):
+                                    st.write(f"{i}. {reason}")
+                                
+                                # Time horizon and risk management
+                                st.markdown("#### ⏰ Time Horizon & Risk Management")
+                                
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.info(f"""
+                                    **Investment Horizon:** {projection_days} days
+                                    
+                                    **Entry Strategy:**
+                                    - Consider gradual position building
+                                    - Monitor volume for confirmation
+                                    - Wait for pullbacks on strong buy signals
+                                    """)
+                                
+                                with col2:
+                                    st.warning(f"""
+                                    **Risk Management:**
+                                    - Set stop loss at ₹{stop_loss:.2f}
+                                    - Position size based on risk tolerance
+                                    - Review recommendation weekly
+                                    - Exit if fundamentals change
+                                    """)
+                                
+                                # Action plan based on recommendation
+                                st.markdown("#### 📋 Suggested Action Plan")
+                                
+                                if action in ['STRONG BUY', 'BUY']:
+                                    st.success(f"""
+                                    **For {action} Recommendation:**
+                                    
+                                    1. **Entry**: Consider buying at current levels or on minor dips
+                                    2. **Target**: Aim for ₹{target_price:.2f} ({expected_return:+.1f}% return)
+                                    3. **Stop Loss**: Set at ₹{stop_loss:.2f}
+                                    4. **Position Size**: Risk 1-2% of portfolio on this trade
+                                    5. **Timeline**: Review in {projection_days} days or at target/stop
+                                    """)
+                                
+                                elif action == 'HOLD':
+                                    st.info(f"""
+                                    **For HOLD Recommendation:**
+                                    
+                                    1. **Current Position**: Maintain existing positions if any
+                                    2. **New Entry**: Wait for clearer signals before new positions
+                                    3. **Monitoring**: Watch for breakout above resistance or breakdown below support
+                                    4. **Review**: Re-evaluate in 1-2 weeks for new signals
+                                    """)
+                                
+                                else:  # SELL recommendations
+                                    st.error(f"""
+                                    **For {action} Recommendation:**
+                                    
+                                    1. **Exit Strategy**: Consider reducing or exiting long positions
+                                    2. **Short Opportunity**: Advanced traders may consider short positions
+                                    3. **Stop Loss**: If shorting, stop at ₹{target_price:.2f}
+                                    4. **Alternative**: Look for better opportunities in other stocks
+                                    5. **Review**: Monitor for reversal signals
+                                    """)
+                            
+                            else:
+                                st.error("Could not generate recommendation. Please try again or check the stock symbol.")
                 
                 except Exception as e:
                     st.error(f"An error occurred during analysis: {str(e)}")

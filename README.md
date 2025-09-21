@@ -16,11 +16,15 @@ A comprehensive stock analysis platform for Indian equity markets with advanced 
 - **Market Sentiment**: Volatility regime, momentum indicators
 - **100% Free Options**: Works without API keys using Reddit + TextBlob
 
-### 📈 Enhanced Technical Analysis
+### 📈 Enhanced Technical Analysis with Trading Recommendations
 - **15+ Advanced Indicators**: RSI, MACD, Stochastic, Williams %R, CCI, ATR, Parabolic SAR, MFI
 - **Pattern Recognition**: Double tops/bottoms, triangles, flags
 - **Support/Resistance**: Automated level detection
 - **Volume Analysis**: OBV trends, breakout detection
+- **90-Day Price Projections**: Interactive slider for 1-90 day analysis periods
+- **AI Trading Recommendations**: Buy/Sell/Hold signals with confidence levels
+- **Target Price & Stop Loss**: Automated calculation based on technical factors
+- **Risk-Reward Analysis**: Complete position sizing and risk management guidance
 
 ### 🔬 Advanced Analytics
 - **Anomaly Detection**: Isolation Forest for unusual stock behavior
@@ -33,8 +37,8 @@ A comprehensive stock analysis platform for Indian equity markets with advanced 
 1. **📊 Input & Data** - Enter stock symbols or upload CSV
 2. **🔍 Fundamental Analysis** - Smart scoring system with 6 criteria
 3. **🎯 Stock Selection** - Choose stocks for advanced analysis
-4. **📈 Technical Analysis** - Interactive charts with overlays
-5. **🤖 ML Predictions** - AI-powered price forecasting (1-30 days)
+4. **📈 Technical Analysis & Recommendations** - Interactive charts with 90-day projections and AI trading signals
+5. **🤖 ML Predictions** - AI-powered price forecasting (1-90 days)
 6. **💭 Sentiment Analysis** - Multi-source news sentiment
 7. **🔬 Advanced Analytics** - Clustering, risk analysis, patterns
 8. **📋 Summary Report** - Comprehensive analysis export
@@ -113,6 +117,24 @@ Max Drawdown: -18.7%
 VaR (95%): -3.2%
 ```
 
+### Trading Recommendation
+```
+Recommendation: 🟢 BUY (High Confidence)
+Target Price: ₹2,650.00 (+8.2%)
+Stop Loss: ₹2,280.00 (-6.9%)
+Risk-Reward Ratio: 1:1.8
+Time Horizon: 30 days
+
+Component Scores:
+• Technical: 72/100
+• ML Prediction: 68/100  
+• Momentum: 75/100
+• Risk: 65/100
+• Volume: 80/100
+
+Overall Score: 71.2/100
+```
+
 ### Sentiment Analysis
 ```
 Overall Sentiment: Positive
@@ -160,8 +182,10 @@ python test_enhanced_features.py
 ## 🆓 Free vs Premium Features
 
 ### Completely Free
-- ✅ Machine Learning Predictions
-- ✅ Advanced Technical Analysis
+- ✅ Machine Learning Predictions (1-90 days)
+- ✅ Advanced Technical Analysis with Projections
+- ✅ AI Trading Recommendations (Buy/Sell/Hold)
+- ✅ Target Price & Stop Loss Calculations
 - ✅ Risk Analytics & Clustering
 - ✅ Reddit Sentiment Analysis
 - ✅ TextBlob/VADER Sentiment
