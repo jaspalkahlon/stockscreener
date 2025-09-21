@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from datetime import datetime
 import numpy as np
 
@@ -306,6 +307,114 @@ else:
         with tab2:
             st.subheader(f"📈 Technical Analysis - {selected_stock}")
             
+            # Create technical analysis chart first (always show)
+            st.subheader("📊 Technical Chart")
+            
+            # Create comprehensive technical chart
+            fig = make_subplots(
+                rows=4, cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.05,
+                subplot_titles=('Price & Moving Averages', 'RSI', 'MACD', 'Volume'),
+                row_heights=[0.5, 0.15, 0.15, 0.2]
+            )
+            
+            # Price candlestick chart
+            fig.add_trace(go.Candlestick(
+                x=hist.index,
+                open=hist['Open'],
+                high=hist['High'],
+                low=hist['Low'],
+                close=hist['Close'],
+                name='Price'
+            ), row=1, col=1)
+            
+            # Moving averages
+            sma_20 = hist['Close'].rolling(20).mean()
+            sma_50 = hist['Close'].rolling(50).mean()
+            
+            fig.add_trace(go.Scatter(
+                x=hist.index, y=sma_20,
+                line=dict(color='orange', width=2),
+                name='SMA 20'
+            ), row=1, col=1)
+            
+            fig.add_trace(go.Scatter(
+                x=hist.index, y=sma_50,
+                line=dict(color='red', width=2),
+                name='SMA 50'
+            ), row=1, col=1)
+            
+            # RSI
+            delta = hist['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rs = gain / loss.replace(0, 0.0001)
+            rsi = 100 - (100 / (1 + rs))
+            
+            fig.add_trace(go.Scatter(
+                x=hist.index, y=rsi,
+                line=dict(color='purple', width=2),
+                name='RSI'
+            ), row=2, col=1)
+            
+            # RSI levels
+            fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+            fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+            fig.add_hline(y=50, line_dash="dot", line_color="gray", row=2, col=1)
+            
+            # MACD
+            ema_12 = hist['Close'].ewm(span=12).mean()
+            ema_26 = hist['Close'].ewm(span=26).mean()
+            macd = ema_12 - ema_26
+            signal = macd.ewm(span=9).mean()
+            histogram = macd - signal
+            
+            fig.add_trace(go.Scatter(
+                x=hist.index, y=macd,
+                line=dict(color='blue', width=2),
+                name='MACD'
+            ), row=3, col=1)
+            
+            fig.add_trace(go.Scatter(
+                x=hist.index, y=signal,
+                line=dict(color='red', width=2),
+                name='Signal'
+            ), row=3, col=1)
+            
+            # MACD Histogram
+            colors = ['green' if val >= 0 else 'red' for val in histogram]
+            fig.add_trace(go.Bar(
+                x=hist.index, y=histogram,
+                name='MACD Histogram',
+                marker_color=colors,
+                opacity=0.6
+            ), row=3, col=1)
+            
+            # Volume
+            fig.add_trace(go.Bar(
+                x=hist.index, y=hist['Volume'],
+                name='Volume',
+                marker_color='lightblue',
+                opacity=0.7
+            ), row=4, col=1)
+            
+            fig.update_layout(
+                title=f"{selected_stock} - Technical Analysis Chart",
+                xaxis_rangeslider_visible=False,
+                height=800,
+                showlegend=True
+            )
+            
+            # Update y-axis labels
+            fig.update_yaxes(title_text="Price (₹)", row=1, col=1)
+            fig.update_yaxes(title_text="RSI", row=2, col=1, range=[0, 100])
+            fig.update_yaxes(title_text="MACD", row=3, col=1)
+            fig.update_yaxes(title_text="Volume", row=4, col=1)
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Technical indicators analysis
             if st.button("🔍 Run Technical Analysis", key="tech_analysis"):
                 with st.spinner("Calculating technical indicators..."):
                     try:
@@ -318,38 +427,47 @@ else:
                                 st.subheader("📊 Key Indicators")
                                 basic = tech_analysis.get('basic_indicators', {})
                                 
-                                # Display indicators in a clean format
-                                indicators = [
-                                    ("RSI", basic.get('RSI', 0), "0-100"),
-                                    ("MACD", basic.get('MACD', 0), "Signal"),
-                                    ("Stochastic %K", basic.get('Stoch_K', 0), "0-100"),
-                                    ("Williams %R", basic.get('Williams_R', 0), "-100-0"),
-                                    ("CCI", basic.get('CCI', 0), "Signal")
-                                ]
+                                # Current values
+                                current_rsi = rsi.iloc[-1] if not rsi.empty else 50
+                                current_macd = macd.iloc[-1] if not macd.empty else 0
+                                current_signal = signal.iloc[-1] if not signal.empty else 0
                                 
-                                for name, value, range_info in indicators:
-                                    if isinstance(value, (int, float)):
-                                        st.metric(name, f"{value:.2f}", help=f"Range: {range_info}")
+                                st.metric("RSI", f"{current_rsi:.1f}", 
+                                         help="Relative Strength Index (0-100). >70 overbought, <30 oversold")
+                                st.metric("MACD", f"{current_macd:.3f}", 
+                                         help="Moving Average Convergence Divergence")
+                                st.metric("MACD Signal", f"{current_signal:.3f}", 
+                                         help="MACD Signal Line")
+                                
+                                # RSI interpretation
+                                if current_rsi > 70:
+                                    st.warning("⚠️ RSI indicates overbought condition")
+                                elif current_rsi < 30:
+                                    st.success("✅ RSI indicates oversold condition")
+                                else:
+                                    st.info("ℹ️ RSI in neutral zone")
                             
                             with col2:
                                 st.subheader("📈 Trend Analysis")
                                 trend = tech_analysis.get('trend_analysis', {})
                                 
-                                direction = trend.get('direction', 'Unknown')
-                                strength = trend.get('strength', 0)
-                                adx = trend.get('adx', 0)
+                                direction = trend.get('direction', 'sideways')
+                                strength = trend.get('strength', 0.5)
                                 
                                 st.metric("Trend Direction", direction.upper())
                                 st.metric("Trend Strength", f"{strength:.2f}")
-                                st.metric("ADX", f"{adx:.2f}")
                                 
-                                # Trend interpretation
-                                if adx > 25:
-                                    st.success("🔥 Strong trend detected")
-                                elif adx > 20:
-                                    st.info("📈 Moderate trend")
+                                # Moving average trend
+                                if sma_20.iloc[-1] > sma_50.iloc[-1]:
+                                    st.success("📈 Bullish MA crossover")
                                 else:
-                                    st.warning("📊 Weak/sideways trend")
+                                    st.warning("📉 Bearish MA crossover")
+                                
+                                # MACD trend
+                                if current_macd > current_signal:
+                                    st.success("🔵 MACD above signal line")
+                                else:
+                                    st.warning("🔴 MACD below signal line")
                             
                             # Support and Resistance
                             st.subheader("🎯 Support & Resistance Levels")
@@ -358,14 +476,15 @@ else:
                             col1, col2, col3 = st.columns(3)
                             
                             with col1:
-                                st.metric("Current Price", f"₹{sr.get('current_price', current_price):.2f}")
+                                st.metric("Current Price", f"₹{current_price:.2f}")
                             
                             with col2:
                                 resistance = sr.get('resistance_levels', [])
                                 if resistance:
                                     st.write("**Resistance Levels:**")
                                     for r in resistance[:3]:  # Show top 3
-                                        st.write(f"₹{r:.2f}")
+                                        distance = (r - current_price) / current_price * 100
+                                        st.write(f"₹{r:.2f} (+{distance:.1f}%)")
                                 else:
                                     st.write("**Resistance:** Not detected")
                             
@@ -374,15 +493,45 @@ else:
                                 if support:
                                     st.write("**Support Levels:**")
                                     for s in support[:3]:  # Show top 3
-                                        st.write(f"₹{s:.2f}")
+                                        distance = (current_price - s) / current_price * 100
+                                        st.write(f"₹{s:.2f} (-{distance:.1f}%)")
                                 else:
                                     st.write("**Support:** Not detected")
+                            
+                            # Trading signals
+                            st.subheader("🎯 Trading Signals")
+                            signals = []
+                            
+                            # RSI signals
+                            if current_rsi > 70:
+                                signals.append("🔴 **SELL Signal**: RSI overbought")
+                            elif current_rsi < 30:
+                                signals.append("🟢 **BUY Signal**: RSI oversold")
+                            
+                            # MACD signals
+                            if current_macd > current_signal and current_macd > 0:
+                                signals.append("🟢 **BUY Signal**: MACD bullish")
+                            elif current_macd < current_signal and current_macd < 0:
+                                signals.append("🔴 **SELL Signal**: MACD bearish")
+                            
+                            # Moving average signals
+                            if sma_20.iloc[-1] > sma_50.iloc[-1] and hist['Close'].iloc[-1] > sma_20.iloc[-1]:
+                                signals.append("🟢 **BUY Signal**: Price above rising MA")
+                            elif sma_20.iloc[-1] < sma_50.iloc[-1] and hist['Close'].iloc[-1] < sma_20.iloc[-1]:
+                                signals.append("🔴 **SELL Signal**: Price below falling MA")
+                            
+                            if signals:
+                                for signal in signals:
+                                    st.write(signal)
+                            else:
+                                st.info("📊 No clear trading signals at this time")
                         
                         else:
                             st.error("Could not perform technical analysis")
                             
                     except Exception as e:
                         st.error(f"Technical analysis error: {e}")
+                        st.write("Using basic chart analysis instead.")
         
         # Tab 3: AI Prediction
         with tab3:
